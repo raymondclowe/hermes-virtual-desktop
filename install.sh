@@ -26,13 +26,23 @@
 #   --cdp-port P       Chrome DevTools port        (default 9333)
 #   --browser NAME     chrome | chromium | auto    (default auto: Chrome first)
 #   --profile-dir DIR  browser profile directory   (default: persistent, per display)
+#   --generate-password  create a random VNC password, print it once, protect the desktop
+#   --vnc-password-stdin read the VNC password from stdin (keeps it out of ps/logs)
+#   --password-file F  use an existing TigerVNC passwd file (made by vncpasswd -f)
 #   --dry-run          show the files, write nothing
 #   --verify N         run the checks for display N and exit
 #   --uninstall N      stop+disable+remove display N's units
 #
-# Security model: the raw VNC port is bound to loopback and passwordless; the
-# ONLY door is the noVNC web port, restricted by ufw to --allow-cidr. Anyone who
-# can reach that port gets a full desktop as that user — keep it LAN-only.
+# Security model, two settings:
+#   default        the raw VNC port is loopback-only and passwordless; the only
+#                  door is the noVNC web port, ufw-restricted to --allow-cidr.
+#                  Anyone who reaches that port gets a full desktop as that user.
+#   with a password  VNC asks for a password before it draws anything; noVNC
+#                  prompts for it, and a wrong one is refused by the server. Use
+#                  this when other machines - or other agents - share the LAN.
+#                  RFB password auth is DES-based and travels unencrypted, so it
+#                  keeps honest people out, not a determined attacker: keep the
+#                  ufw allow-list, and for real secrecy tunnel over SSH.
 set -euo pipefail
 
 DISPLAY_NUM=1
@@ -48,6 +58,11 @@ PROFILE_DIR=
 DRY_RUN=0
 MODE="install"
 VERIFY_ONLY=""
+WANT_PASSWORD=0
+GEN_PASSWORD=0
+PASSWORD_FILE_IN=""
+VNC_PASS_FILE=""
+VNC_SEC_ARGS="-SecurityTypes None"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 say() { echo "  $*"; }
@@ -66,6 +81,9 @@ while [[ $# -gt 0 ]]; do
     --browser)     BROWSER="$2"; shift 2 ;;
     --profile-dir) PROFILE_DIR="$2"; shift 2 ;;
     --dry-run)     DRY_RUN=1; shift ;;
+    --generate-password)   WANT_PASSWORD=1; GEN_PASSWORD=1; shift ;;
+    --vnc-password-stdin)  WANT_PASSWORD=1; shift ;;
+    --password-file)       VNC_PASS_FILE="$2"; PASSWORD_FILE_IN="$2"; WANT_PASSWORD=1; shift 2 ;;
     --suggest)     MODE="suggest"; shift ;;
     --verify)      MODE="verify"; VERIFY_ONLY="$2"; shift 2 ;;
     --uninstall)   MODE="uninstall"; VERIFY_ONLY="$2"; shift 2 ;;
@@ -161,8 +179,11 @@ verify() {
     say "PASS  noVNC listening on 0.0.0.0:${wport}"
   else say "FAIL  nothing on 0.0.0.0:${wport}"; fails=$((fails+1)); fi
 
-  # Real RFB handshake: banner, then the security-type list the server offers.
-  local rfb
+  # Real RFB handshake. The security-type list says what the server accepts:
+  #   [1] = None (no password)   [2] = VncAuth (password)
+  # If a password is configured, also prove a wrong one is actually refused.
+  local rfb rfb_want="1"
+  systemctl show -p ExecStart --value "$vunit" 2>/dev/null | grep -q 'SecurityTypes VncAuth' && rfb_want="2"
   rfb=$(python3 - "$vport" <<'PY' 2>&1 || true
 import socket, sys
 port = int(sys.argv[1])
@@ -171,11 +192,27 @@ banner = s.recv(12)
 s.sendall(b"RFB 003.008\n")
 n = s.recv(1)[0]
 types = list(s.recv(n))
-print(f"{banner!r} types={types}")
+out = f"{banner!r} types={types}"
+if 2 in types:
+    s.sendall(b"\x02")
+    s.recv(16)                        # challenge
+    s.sendall(b"\x00" * 16)           # deliberately wrong response
+    status = s.recv(4)
+    out += (" wrong-password=refused" if status != b"\x00\x00\x00\x00" else " wrong-password=ACCEPTED")
+print(out)
 PY
 )
-  if [[ "$rfb" == *"RFB 003."* ]]; then say "PASS  RFB handshake: ${rfb}"
-  else say "FAIL  RFB handshake: ${rfb}"; fails=$((fails+1)); fi
+  if [[ "$rfb" != *"RFB 003."* ]]; then
+    say "FAIL  RFB handshake: ${rfb}"; fails=$((fails+1))
+  elif [[ "$rfb_want" == "2" ]]; then
+    if [[ "$rfb" == *"2]"* ]]; then say "PASS  RFB asks for a password (${rfb})"
+    else say "FAIL  password configured but server offers: ${rfb}"; fails=$((fails+1)); fi
+    if [[ "$rfb" == *"wrong-password=refused"* ]]; then say "PASS  a wrong password is refused"
+    else say "FAIL  wrong password was not refused: ${rfb}"; fails=$((fails+1)); fi
+  else
+    if [[ "$rfb" == *"types=[1]"* ]]; then say "PASS  RFB handshake: ${rfb} (passwordless by design)"
+    else say "FAIL  expected passwordless types=[1], got: ${rfb}"; fails=$((fails+1)); fi
+  fi
 
   # Web door: page must exist, and the WebSocket upgrade must really reach the
   # VNC server (the RFB banner arrives as the first binary frame).
@@ -437,6 +474,54 @@ exec dbus-launch --exit-with-session xfce4-session
 say "$XSTARTUP"
 
 hdr "Write systemd units (system units — survive reboot, start at boot)"
+
+# ---------------------------------------------------------------- access ----
+# Optional VNC password: RFB asks for it before a single pixel is drawn, so the
+# noVNC door stops being "a full desktop to anyone who can reach the port".
+# TigerVNC's VncAuth uses only the first 8 characters - say so rather than
+# pretend a longer password buys anything.
+as_target() { if [[ "$EUID" -eq 0 ]]; then sudo -u "$TARGET_USER" "$@"; else "$@"; fi; }
+
+if [[ "$WANT_PASSWORD" == "1" ]]; then
+  hdr "Access"
+  pass_dir="${HOME_DIR}/.vnc"
+  dest="${pass_dir}/passwd-${DISPLAY_NUM}"
+
+  if [[ -n "$PASSWORD_FILE_IN" ]]; then
+    [[ -r "$PASSWORD_FILE_IN" ]] || die "cannot read password file: ${PASSWORD_FILE_IN}"
+    say "using existing VNC passwd file ${PASSWORD_FILE_IN}"
+  elif [[ "$GEN_PASSWORD" == "1" ]]; then
+    # head -c closes the pipe first; under `set -o pipefail` tr then exits on
+    # SIGPIPE and kills the whole script. `|| true` keeps that harmless.
+    VNC_PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 8 || true)
+    say "generated an 8-character password - shown once, save it now:"
+    say "    ${VNC_PASSWORD}"
+    say "(VncAuth uses only the first 8 characters, so this is the whole secret)"
+  else
+    IFS= read -r VNC_PASSWORD || true
+    [[ -n "${VNC_PASSWORD:-}" ]] || die "--vnc-password-stdin needs the password on stdin"
+    [[ ${#VNC_PASSWORD} -gt 8 ]] && say "note: VncAuth uses only the first 8 characters"
+  fi
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    say "[dry-run] would write ${dest} (mode 600) and require a password"
+  else
+    as_target mkdir -p "$pass_dir"
+    as_target chmod 700 "$pass_dir"
+    if [[ -n "$PASSWORD_FILE_IN" ]]; then
+      as_target install -m 600 "$PASSWORD_FILE_IN" "$dest"
+    else
+      command -v vncpasswd >/dev/null || die "vncpasswd not found (install tigervnc-tools)"
+      printf '%s\n' "$VNC_PASSWORD" | as_target sh -c "vncpasswd -f > '$dest'"
+      as_target chmod 600 "$dest"
+    fi
+    [[ -s "$dest" ]] || die "password file ${dest} was not written"
+    say "password file ${dest} (mode 600, owner ${TARGET_USER})"
+  fi
+  VNC_PASS_FILE="$dest"
+  VNC_SEC_ARGS="-SecurityTypes VncAuth -PasswordFile ${dest}"
+fi
+
 VNC_UNIT_CONTENT="[Unit]
 Description=Hermes desktop display :${DISPLAY_NUM} (TigerVNC + XFCE)
 After=network.target
@@ -447,9 +532,11 @@ User=${TARGET_USER}
 Group=${TARGET_USER}
 Environment=HOME=${HOME_DIR}
 Environment=USER=${TARGET_USER}
-# Passwordless, but bound to loopback: the noVNC web port is the only door.
+# Loopback-only always. Auth depends on how this display was installed:
+#   -SecurityTypes None            -> passwordless (noVNC door is the only gate)
+#   -SecurityTypes VncAuth -PasswordFile ...  -> password before any pixels
 # vncserver refuses a network-exposed passwordless server by design.
-ExecStart=/usr/bin/vncserver :${DISPLAY_NUM} -geometry ${GEOMETRY} -depth 24 -localhost yes -SecurityTypes None -xstartup ${XSTARTUP}
+ExecStart=/usr/bin/vncserver :${DISPLAY_NUM} -geometry ${GEOMETRY} -depth 24 -localhost yes ${VNC_SEC_ARGS} -xstartup ${XSTARTUP}
 ExecStop=/usr/bin/vncserver -kill :${DISPLAY_NUM}
 Restart=on-failure
 RestartSec=5
@@ -567,6 +654,7 @@ Next steps
   Profile:  ${PROFILE_DIR}
             persistent: sign in to Chrome once and bookmarks/passwords sync from
             your other machines. Nothing here is wiped on rebuild or reboot.
+  Access:   $(if [[ -n "$VNC_PASS_FILE" ]]; then echo "VNC password required (file ${VNC_PASS_FILE}) - noVNC asks for it"; else echo "NO password: anyone who reaches the web port gets this desktop"; fi)
   Re-check: $0 --verify ${DISPLAY_NUM}
   Remove:   $0 --uninstall ${DISPLAY_NUM}
 EOF
