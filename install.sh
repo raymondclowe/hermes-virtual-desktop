@@ -66,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --browser)     BROWSER="$2"; shift 2 ;;
     --profile-dir) PROFILE_DIR="$2"; shift 2 ;;
     --dry-run)     DRY_RUN=1; shift ;;
+    --suggest)     MODE="suggest"; shift ;;
     --verify)      MODE="verify"; VERIFY_ONLY="$2"; shift 2 ;;
     --uninstall)   MODE="uninstall"; VERIFY_ONLY="$2"; shift 2 ;;
     -h|--help)     sed -n '2,40p' "$0"; exit 0 ;;
@@ -90,6 +91,43 @@ PROFILE_ROOT="${HOME_DIR}/.config/hermes-desktop"
 HOSTNAME_SHORT="$(hostname -s)"
 
 have_sudo() { sudo -n true 2>/dev/null; }
+
+check_port() {
+  local name="$1" port="$2" unit="$3" pid owner
+  if ! port_in_use "$port"; then say "$name port ${port} free"; return 0; fi
+  if systemctl is-active --quiet "$unit" 2>/dev/null; then
+    say "$name port ${port} held by ${unit} (this install)"; return 0
+  fi
+  pid=$(port_pid "$port")
+  owner=""
+  if [[ -n "$pid" && -r "/proc/${pid}/cmdline" ]]; then
+    owner=$(tr '\0' ' ' < "/proc/${pid}/cmdline" | grep -o -- '--user-data-dir=[^ ]*' | head -1)
+  fi
+  say "CONFLICT ${name} port ${port} is held by pid ${pid:-?}${owner:+ (${owner#--user-data-dir=})}"
+  return 1
+}
+
+# Ports are host-wide. Several Hermes instances on one machine share loopback,
+# so two desktops asking for 6080 or 9333 collide even though their profiles,
+# state and skills are separate. The arithmetic below is the allocation rule:
+#   display :N  ->  VNC 5900+N, noVNC 6079+N, CDP 9332+N
+# N=1 gives the defaults (5901 / 6080 / 9333).
+port_in_use() { ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$"; }
+port_pid() { ss -ltnp 2>/dev/null | awk -v p=":$1" '$0 ~ p {match($0, /pid=([0-9]+)/, m); print m[1]; exit}'; }
+
+suggest_ports() {
+  local n v w c
+  for n in $(seq 1 20); do
+    v=$((5900 + n)); w=$((6079 + n)); c=$((9332 + n))
+    [[ -e "/tmp/.X11-unix/X${n}" ]] && continue
+    port_in_use "$v" && continue
+    port_in_use "$w" && continue
+    port_in_use "$c" && continue
+    echo "--display ${n} --web-port ${w} --cdp-port ${c}"
+    return 0
+  done
+  return 1
+}
 
 # ---------------------------------------------------------------- verify ----
 # Every claim below is measured, never inferred.
@@ -183,6 +221,22 @@ PY
   cport=$(systemctl show -p ExecStart --value "$cunit" 2>/dev/null \
           | grep -o 'remote-debugging-port=[0-9]*' | cut -d= -f2 | head -1)
   if [[ -n "$cport" ]]; then
+    # The port answering is not enough: another instance's Chrome would answer
+    # just as happily, and the agent would drive the wrong browser with the
+    # wrong logins. Check the listening process actually carries our profile.
+    local cpid cowner prof0
+    prof0=$(systemctl show -p ExecStart --value "$cunit" 2>/dev/null \
+            | grep -o 'user-data-dir=[^ ]*' | cut -d= -f2 | head -1)
+    cpid=$(port_pid "$cport")
+    if [[ -n "$cpid" && -r "/proc/${cpid}/cmdline" ]]; then
+      cowner=$(tr '\0' ' ' < "/proc/${cpid}/cmdline" | grep -o -- '--user-data-dir=[^ ]*' | head -1)
+      if [[ -n "$prof0" && "$cowner" != *"$prof0"* ]]; then
+        say "FAIL  CDP ${cport} belongs to another instance (${cowner#--user-data-dir=}) — the agent would drive the wrong browser"
+        fails=$((fails+1))
+      else
+        say "PASS  CDP ${cport} belongs to this install (pid ${cpid})"
+      fi
+    fi
     rc=$(python3 - "$cport" <<'PY' 2>&1 || true
 import asyncio, json, sys, urllib.request
 port = sys.argv[1]
@@ -239,6 +293,13 @@ PY
   echo "RESULT: ${fails} check(s) failed."
   return 1
 }
+
+if [[ "$MODE" == "suggest" ]]; then
+  block=$(suggest_ports) || die "no free display/port block in 1..20 — clean up unused desktops first"
+  echo "next free block on $(hostname -s):"
+  echo "  $0 $block"
+  exit 0
+fi
 
 if [[ "$MODE" == "verify" ]]; then verify "$VERIFY_ONLY"; exit $?; fi
 
@@ -342,14 +403,23 @@ if [[ "$WITH_CHROME" == "1" ]]; then
     say "note: Chromium cannot sign in to Chrome Sync (no Google API keys). The profile still persists."
 fi
 
-if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qx "0.0.0.0:${WEB_PORT}"; then
-  if systemctl is-active --quiet "${NOVNC_UNIT}"; then
-    say "web port ${WEB_PORT} is already held by ${NOVNC_UNIT} — reinstalling over it"
-  else
-    die "port ${WEB_PORT} is already in use — pick another with --web-port"
-  fi
+hdr "Ports"
+conflict=0
+if [[ -e "/tmp/.X11-unix/X${DISPLAY_NUM}" ]] && ! systemctl is-active --quiet "${VNC_UNIT}" 2>/dev/null; then
+  say "CONFLICT display :${DISPLAY_NUM} already has an X socket (/tmp/.X11-unix/X${DISPLAY_NUM})"
+  conflict=1
 fi
-say "web port ${WEB_PORT} free; X display :${DISPLAY_NUM} -> VNC ${VNC_PORT}"
+check_port "VNC" "$VNC_PORT" "$VNC_UNIT" || conflict=1
+check_port "noVNC" "$WEB_PORT" "$NOVNC_UNIT" || conflict=1
+if [[ "$WITH_CHROME" == "1" ]]; then check_port "CDP" "$CDP_PORT" "$CHROME_UNIT" || conflict=1; fi
+if [[ "$conflict" == "1" ]]; then
+  echo
+  echo "  These ports are host-wide, not per Hermes profile: another instance on this"
+  echo "  machine already owns one of them. Pick the next free block with:"
+  echo "      $0 --suggest"
+  exit 1
+fi
+say "display :${DISPLAY_NUM} -> VNC ${VNC_PORT}, noVNC ${WEB_PORT}${WITH_CHROME:+, CDP ${CDP_PORT}}"
 
 hdr "Write the desktop session script"
 XSTARTUP_CONTENT="#!/bin/sh

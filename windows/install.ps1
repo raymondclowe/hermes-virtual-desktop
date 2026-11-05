@@ -113,6 +113,29 @@ Say "profile : $fullProfile"
 Say "CDP     : http://127.0.0.1:$CdpPort  (loopback only)"
 Say "task    : $TaskName"
 
+# Ports are machine-wide. Two Hermes instances (or the human's own browser) can
+# already own this one; Chrome then fails to open the port and the agent happily
+# connects to whatever answers - the wrong profile, the wrong logins.
+$existing = @(Get-NetTCPConnection -LocalPort $CdpPort -State Listen -ErrorAction SilentlyContinue)
+if ($existing.Count -gt 0) {
+    $ownerPid = $existing[0].OwningProcess
+    $owner = Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $ownerPid) -ErrorAction SilentlyContinue
+    $ownerCmd = ''
+    $ownerName = 'unknown'
+    if ($owner) {
+        $ownerCmd = [string]$owner.CommandLine
+        $ownerName = [string]$owner.Name
+    }
+    if ($ownerCmd -and $ownerCmd.Contains($fullProfile)) {
+        Say ("port {0} already serves this profile (pid {1}) - reusing that browser" -f $CdpPort, $ownerPid)
+    }
+    else {
+        $msg = ("port {0} is held by pid {1} ({2}) - another Hermes instance or another browser owns it. " +
+                "Use -CdpPort {3}, or -DryRun to look around first.") -f $CdpPort, $ownerPid, $ownerName, ($CdpPort + 1)
+        if ($DryRun) { Say ("[dry-run] WARNING: " + $msg) } else { Die $msg }
+    }
+}
+
 if ($DryRun) {
     Say '[dry-run] would create the profile directory'
     Say ('[dry-run] would register scheduled task at logon: ' + $exe + ' ' + $arguments)

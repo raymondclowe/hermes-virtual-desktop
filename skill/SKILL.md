@@ -45,8 +45,8 @@ then already logged in.
 
 ## Verify before claiming it works
 
-`./install.sh --verify N` must end `RESULT: display :N is live` with eleven PASS lines, including
-`Chrome on :N executes JS` and `profile persists at ...`. Services "active" is not proof: a Chrome with a dead zygote still listens
+`./install.sh --verify N` must end `RESULT: display :N is live` with no FAIL lines, including
+`CDP NNNN belongs to this install`, `Chrome on :N executes JS` and `profile persists at ...`. Services "active" is not proof: a Chrome with a dead zygote still listens
 on its CDP port while every tab hangs. That failure's fix is the `XDG_RUNTIME_DIR` and
 `DBUS_SESSION_BUS_ADDRESS` entries in the Chrome unit — see `docs/troubleshooting.md`.
 

@@ -171,6 +171,39 @@ Verified on Windows 11 with PowerShell 5.1: script parses clean, Chrome detected
 for the current identity. The live browser launch is the one step that needs a real run on the target
 machine.
 
+## Several instances on one machine
+
+Ports belong to the machine, not to a Hermes profile. Two instances on one host want the same `6080`
+and `9333`, and the second one loses — silently, in the worst way: Chrome cannot open the CDP port,
+starts anyway, and the agent connects to **whatever is answering**, which may be the other instance's
+browser or the human's own Chrome, with the wrong logins on the wrong sites.
+
+The allocation rule is arithmetic, and the installer picks the block for you:
+
+```
+display :N  ->  VNC 5900+N   noVNC 6079+N   CDP 9332+N      (N=1: 5901 / 6080 / 9333)
+```
+
+```bash
+./install.sh --suggest
+#   ./install.sh --display 3 --web-port 6082 --cdp-port 9335
+```
+
+Before creating anything the installer refuses a port owned by someone else and names the owner:
+
+```
+CONFLICT CDP port 9333 is held by pid 346695 (/home/op3/.config/chrome-raymond)
+```
+
+and `--verify` proves the port is *yours*, not merely answering:
+
+```
+PASS  CDP 9335 belongs to this install (pid 476377)
+```
+
+Windows uses the same rule with `-CdpPort`. Port tables, how to find a port's owner, and the
+container/WSL2 boundary for true isolation: [docs/ports.md](docs/ports.md).
+
 ## Requirements
 
 - Ubuntu 22.04/24.04 (tested on 24.04, Chrome 156, TigerVNC 1.13). Any Debian-family distro with
@@ -193,6 +226,7 @@ Verifying display :9 (VNC 5909, web 6089)
   PASS  /vnc.html returns 200
   PASS  websockify -> VNC proven (first frame: b'RFB 003.008\n')
   PASS  X session answers on :9 (active window: New Tab - Google Chrome)
+  PASS  CDP 9339 belongs to this install (pid 476377)
   PASS  Chrome on :9 executes JS (CDP 9339, readyState=complete)
   PASS  profile persists at /home/op3/.config/hermes-desktop/chrome-9 (8.2M)
 
@@ -247,6 +281,7 @@ install.sh              provision / verify / uninstall (bash, no dependencies be
 bin/desktop_input.py    X11-level click/type/key, geometry read over CDP
 docs/input-ladder.md    the four input paths, with code and the decision rule
 docs/profile-persistence.md  Chrome vs Chromium, signing in, backup, password store
+docs/ports.md           port blocks per instance, and the wrong-browser trap
 docs/native-window.md   optional Xpra lane for a native-looking window (Windows client)
 docs/troubleshooting.md symptom -> cause -> fix, from measured failures
 systemd/                example unit for the optional Xpra lane
