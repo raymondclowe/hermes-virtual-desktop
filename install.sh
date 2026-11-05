@@ -582,7 +582,11 @@ ExecStart=/opt/google/chrome/google-chrome --user-data-dir=${PROFILE_DIR} --remo
 Restart=on-failure
 RestartSec=5
 MemoryMax=2G
-TasksMax=200
+# 200 tasks is too low: five normal tabs already need ~220 threads, the kernel
+# then refuses to fork inside the cgroup and renderers die one by one (measured
+# on a real install, Chrome 156, Ubuntu 24.04: the kernel logs
+# fork rejected by pids controller for the service's cgroup.
+TasksMax=1024
 
 [Install]
 WantedBy=multi-user.target
