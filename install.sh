@@ -573,7 +573,7 @@ Group=${TARGET_USER}
 Environment=HOME=${HOME_DIR}
 Environment=DISPLAY=:${DISPLAY_NUM}
 # Without a session bus / runtime dir the zygote child dies at startup and every
-# tab hangs on took-too-long-to-load (measured on op3, Chrome 156).
+# tab hangs on took-too-long-to-load (measured on Ubuntu 24.04, Chrome 156).
 Environment=XDG_RUNTIME_DIR=/run/user/${TARGET_UID}
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${TARGET_UID}/bus
 # Chrome 136+ refuses --remote-debugging-port without an explicit --user-data-dir.

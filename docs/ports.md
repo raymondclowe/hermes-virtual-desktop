@@ -25,7 +25,7 @@ Ask the machine which block is free; do not guess:
 
 ```bash
 ./install.sh --suggest
-# next free block on op3:
+# next free block on this host:
 #   ./install.sh --display 3 --web-port 6082 --cdp-port 9335
 ```
 
@@ -49,7 +49,7 @@ So the installer checks two separate things:
 Measured on this host: asking for `9333` while the human's own Chrome holds it gives
 
 ```
-CONFLICT CDP port 9333 is held by pid 346695 (/home/op3/.config/chrome-raymond)
+CONFLICT CDP port 9333 is held by pid 346695 (/home/USERNAME/.config/chrome-raymond)
 ```
 
 and the install stops. A correct install prints

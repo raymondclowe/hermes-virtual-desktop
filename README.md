@@ -293,7 +293,7 @@ display :N  ->  VNC 5900+N   noVNC 6079+N   CDP 9332+N      (N=1: 5901 / 6080 / 
 Before creating anything the installer refuses a port owned by someone else and names the owner:
 
 ```
-CONFLICT CDP port 9333 is held by pid 346695 (/home/op3/.config/chrome-raymond)
+CONFLICT CDP port 9333 is held by pid 346695 (/home/USERNAME/.config/chrome-raymond)
 ```
 
 and `--verify` proves the port is *yours*, not merely answering:
@@ -321,9 +321,9 @@ Verifying display :9 (VNC 5909, web 6089)
   PASS  X session answers on :9 (active window: New Tab - Google Chrome)
   PASS  CDP 9339 belongs to this install (pid 476377)
   PASS  Chrome on :9 executes JS (CDP 9339, readyState=complete)
-  PASS  profile persists at /home/op3/.config/hermes-desktop/chrome-9 (8.2M)
+  PASS  profile persists at /home/USERNAME/.config/hermes-desktop/chrome-9 (8.2M)
 
-RESULT: display :9 is live.  Browser door: http://192.168.0.102:6089/vnc.html
+RESULT: display :9 is live.  Browser door: http://HOST-IP:6089/vnc.html
 ```
 
 With a password installed, the two RFB lines become
