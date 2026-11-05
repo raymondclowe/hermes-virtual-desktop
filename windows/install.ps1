@@ -39,7 +39,8 @@ $ErrorActionPreference = 'Stop'
 $TaskName = "HermesDesktopBrowser-$CdpPort"
 
 function Say($m) { Write-Host "  $m" }
-function Die($m) { Write-Error $m; exit 1 }
+# One clean line on stderr, no Write-Error invocation frame around it.
+function Die($m) { [Console]::Error.WriteLine($m); exit 1 }
 
 if ([string]::IsNullOrWhiteSpace($ProfileDir)) {
     $ProfileDir = Join-Path $env:LOCALAPPDATA "hermes-desktop\browser-$CdpPort"
@@ -90,8 +91,13 @@ $leaf = Split-Path $exe -Leaf
 if ($leaf -match 'chrome') { $browserName = 'chrome' } else { $browserName = 'edge' }
 
 # The profile must persist: refuse anything under the temp directory.
-$tempRoot = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')
-$fullProfile = [System.IO.Path]::GetFullPath($ProfileDir).TrimEnd('\')
+try {
+    $tempRoot = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')
+    $fullProfile = [System.IO.Path]::GetFullPath($ProfileDir).TrimEnd('\')
+}
+catch {
+    Die ("invalid -ProfileDir '{0}': {1}. Pass a real Windows path, e.g. -ProfileDir 'C:\Users\me\AppData\Local\hermes-desktop\browser-9333'." -f $ProfileDir, $_.Exception.Message)
+}
 if ($fullProfile.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
     Die "profile must persist across reboots - refusing a temp directory: $fullProfile"
 }
@@ -143,8 +149,13 @@ if ($DryRun) {
     exit 0
 }
 
-New-Item -ItemType Directory -Force -Path $fullProfile | Out-Null
-Say "created profile directory"
+if (Test-Path -LiteralPath $fullProfile) {
+    Say "using the existing profile directory"
+}
+else {
+    New-Item -ItemType Directory -Force -Path $fullProfile | Out-Null
+    Say "created profile directory"
+}
 
 function Get-CdpVersion {
     try {

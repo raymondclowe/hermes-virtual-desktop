@@ -83,23 +83,26 @@ instance or the profile is locked — check for a second Chrome using the same `
 
 ## Verified
 
-On Windows 11 with PowerShell 5.1 (`5.1.26100`):
+Run on Windows 11 with PowerShell 5.1 (`5.1.26100`) and Chrome `157.0.8103.38`, end to end:
 
 | Check | Result |
 |---|---|
-| script parses (`Parser::ParseFile`) | 0 errors |
-| Chrome detection | `C:\Program Files\Google\Chrome\Application\chrome.exe` chosen; Edge found as fallback |
-| dry-run output | correct, exit 0 |
-| logon task registers for the current identity | `state=Ready`, `user=raymo`, then removed cleanly |
+| script parses | 0 errors |
+| Chrome detection | `C:\Program Files\Google\Chrome\Application\chrome.exe`; Edge found as fallback |
+| dry-run | correct, exit 0, no task created |
+| live run (`-NoAutostart`, spare port) | profile created, browser started, `RESULT: browser is up and drivable.` |
+| `/json/version` | `Chrome/157.0.8103.38`, WebSocket URL returned |
+| **driven over CDP** | opened a target, `Runtime.evaluate` set `document.title`, title read back from `/json/list` — not just an HTTP peek |
+| second run of the same command | `port NNNN already serves this profile (pid …) - reusing that browser`, same pid, same browser GUID — no second browser |
+| bad `-ProfileDir` | one clean error line, exit 1 |
+| logon task | registers `Ready` for the current identity, then removes cleanly (tested with a throwaway task) |
+| cleanup | listener gone, `chrome.exe` count 0, profile and empty parent removed, no `HermesDesktopBrowser*` task left |
 
-Not yet exercised on Windows by this repo: the live browser launch and the CDP read-back inside the
-script (both are the same two operations that are proven on Linux: start the process, then read
-`/json/version`). Run it once on the target machine before relying on it.
-
-One defect found and fixed this way: `$env:USERDOMAIN` is `WORKGROUP` on a machine that is not
+Two defects this testing found, both fixed: `$env:USERDOMAIN` is `WORKGROUP` on a machine that is not
 domain-joined, and `WORKGROUP\user` does not resolve — `Register-ScheduledTask` fails with
-`0x80070534` (no mapping between account names and SIDs). The script now uses
-`[WindowsIdentity]::GetCurrent().Name`, which resolves in both cases.
+`0x80070534` (no mapping between account names and SIDs); and a malformed `-ProfileDir` surfaced as a
+bare `NotSupportedException`. The script now uses `[WindowsIdentity]::GetCurrent().Name` and reports a
+bad profile path as one readable line.
 
 ## If the machine is headless (no logged-in human)
 
