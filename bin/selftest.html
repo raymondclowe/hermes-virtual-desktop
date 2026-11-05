@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hermes desktop selftest</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; color: #111; background: #fff; }
+  h1 { font-size: 1.4rem; }
+  #count { font-weight: 700; }
+  input, button { font: inherit; padding: .4rem .6rem; }
+</style>
+</head>
+<body>
+<h1 id="ok">Desktop selftest</h1>
+<p>Counter: <span id="count">0</span></p>
+<p><button id="btn" type="button">Click me</button></p>
+<p><input id="name" type="text" placeholder="type here" size="30"></p>
+<p id="echo">nothing typed yet</p>
+<pre id="log"></pre>
+
+<script>
+  // Local, offline, and stable: this page is the acceptance target so the test
+  // does not depend on the structure of any public website (example.com, for
+  // one, no longer has an <h1>).
+  const state = { clicks: 0, trusted: [] };
+  window.__selftest = state;
+
+  document.getElementById('btn').addEventListener('click', () => {
+    state.clicks += 1;
+    document.getElementById('count').textContent = String(state.clicks);
+    state.trusted.push('click:isTrusted=' + String(event.isTrusted));
+    draw();
+  });
+
+  const input = document.getElementById('name');
+  input.addEventListener('input', (e) => {
+    document.getElementById('echo').textContent = 'typed: ' + input.value;
+    state.trusted.push('input:isTrusted=' + String(e.isTrusted));
+    draw();
+  });
+
+  function draw() {
+    document.getElementById('log').textContent = JSON.stringify(state, null, 2);
+    document.title = 'Hermes desktop selftest — ' + state.clicks + ' clicks';
+  }
+</script>
+</body>
+</html>

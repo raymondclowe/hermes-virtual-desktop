@@ -62,7 +62,7 @@ would exit, and the agent's automation would land in the human's live session.
 browser = playwright.chromium.connect_over_cdp("http://127.0.0.1:9333")
 ctx = browser.contexts[0]
 page = ctx.pages[0] if ctx.pages else ctx.new_page()
-page.goto("https://example.com")
+page.goto("file:///C:/path/to/hermes-virtual-desktop/bin/selftest.html")  # or any real URL
 ```
 
 - The DOM/CDP path is the default on Windows too.
@@ -77,6 +77,9 @@ page.goto("https://example.com")
 ```powershell
 Invoke-RestMethod http://127.0.0.1:9333/json/version
 ```
+
+To prove a page can be driven, use `bin/selftest.html` from this repo rather than a public page: its
+title and `window.__selftest` report what happened, and no website's structure is assumed.
 
 That returns the browser version and the WebSocket URL. If it hangs, the port is taken by another
 instance or the profile is locked — check for a second Chrome using the same `--user-data-dir`.

@@ -238,6 +238,28 @@ The WebSocket check proves the web port really reaches the VNC server rather tha
 The last check exists because a Chrome with a dead zygote still listens on its CDP port while every
 tab hangs — services "running" is not the same as a desktop that works.
 
+## Verify against a page you control, not a public website
+
+Any external page can be redesigned out from under a test — `example.com` no longer has an `<h1>`, so
+an acceptance check based on it fails for a reason that has nothing to do with the desktop. Use the
+small page in this repo instead; it reports what happened in its own title and in
+`window.__selftest`:
+
+```bash
+PAGE="file://$PWD/bin/selftest.html"
+bin/desktop_input.py --display :1 --cdp http://127.0.0.1:9333 open "$PAGE"
+bin/desktop_input.py --display :1 --cdp http://127.0.0.1:9333 where --selector '#ok' --dry-run
+bin/desktop_input.py --display :1 --cdp http://127.0.0.1:9333 click --selector '#btn'
+bin/desktop_input.py --display :1 --cdp http://127.0.0.1:9333 type  --selector '#name' --text 'hello'
+```
+
+Measured on a fresh install: the title becomes `Hermes desktop selftest — 1 clicks`, the input reads
+`hello`, and `window.__selftest.trusted` shows `click:isTrusted=true` / `input:isTrusted=true` — which
+is the whole point of the X11 lane: the page sees real input, not synthetic events.
+
+For a pure "can the agent evaluate anything at all" check, `Runtime.evaluate` of `1+1` needs no page
+and no network at all.
+
 ## Security model
 
 | Port | Bound to | Auth | Reachable by |
@@ -279,6 +301,7 @@ control port as part of the install.
 ```
 install.sh              provision / verify / uninstall (bash, no dependencies beyond apt)
 bin/desktop_input.py    X11-level click/type/key, geometry read over CDP
+bin/selftest.html       tiny local page with a counter, an input and a log — the drive test
 docs/input-ladder.md    the four input paths, with code and the decision rule
 docs/profile-persistence.md  Chrome vs Chromium, signing in, backup, password store
 docs/ports.md           port blocks per instance, and the wrong-browser trap
