@@ -58,13 +58,15 @@ Check, preview, remove:
 | session script | `~/.vnc/xstartup<N>` pins `DISPLAY=:<N>` and execs `xfce4-session` in the foreground |
 | `hermes-vnc-<N>.service` | TigerVNC display `:<N>`, `-localhost yes -SecurityTypes None`, 24-bit |
 | `hermes-novnc-<N>.service` | `websockify --web=/usr/share/novnc <web-port> localhost:590<N>` |
-| `hermes-chrome-<N>.service` | Chrome on that display, own profile, CDP port, memory/task caps |
+| browser | Chrome (Google build) if available, else Chromium — see [docs/profile-persistence.md](docs/profile-persistence.md) |
+| `hermes-chrome-<N>.service` | that browser on the display `:<N>`, own **persistent** profile, CDP port, memory/task caps |
 | browser door | `/usr/share/novnc/index.html` redirect so `host:port` works without `/vnc.html` |
 | firewall | ufw allows the web port from `--allow-cidr` (default `192.168.0.0/24`) only |
 | verification | ten live checks, including a real RFB handshake and a JS evaluation inside Chrome |
 
 Flags: `--display`, `--web-port`, `--geometry`, `--user`, `--allow-cidr`, `--no-ufw`,
-`--no-chrome`, `--cdp-port`, `--dry-run`, `--verify N`, `--uninstall N`.
+`--no-chrome`, `--cdp-port`, `--browser auto|chrome|chromium`, `--profile-dir`, `--dry-run`,
+`--verify N`, `--uninstall N`.
 
 ## Three ways to drive it — pick by symptom, not by taste
 
@@ -93,6 +95,51 @@ human, headless flags, missing plugins). That is a browser-profile problem, not 
 fix it by using this desktop's real Chrome and logging in once by hand, not by adding another
 automation stack.
 
+## The profile is the point — Chrome, not Chromium
+
+A desktop whose browser forgets you is a desktop you log into every morning. The installer therefore
+gives the browser a **persistent profile** at `~/.config/hermes-desktop/<browser>-<display>/`, and
+prefers **Chrome** because only the Google build can sign in to Chrome Sync — which is what carries
+bookmarks, passwords and extensions from the human's other machines.
+
+| | Chrome | Chromium |
+|---|---|---|
+| everything a browser does | yes | yes |
+| profile persists on disk | yes | yes |
+| Chrome Sync (bookmarks, passwords, extensions) | **yes** | **no** (no Google API keys) |
+| Linux arm64 | not published by Google | yes |
+
+`--verify N` prints the profile path and size and fails if it is missing. `--uninstall N` never
+deletes it. Sign in once through the browser door; the agent's browser is then already logged in.
+Details, backup and the password-store trade-off: [docs/profile-persistence.md](docs/profile-persistence.md).
+
+## Native window instead of a browser tab (Windows client, remote Linux host)
+
+If the human is on Windows, Hermes is on a remote Linux host, and they want Chrome to look like an
+application window rather than a tab, the optional lane is **Xpra**: it forwards the desktop (or a
+single app) and lets the client's own window manager draw it — real title bar, resize, clipboard,
+survives disconnect.
+
+```bash
+# host: mirror the existing desktop, loopback only
+sudo apt-get install -y xpra
+/usr/bin/python3 /usr/bin/xpra shadow :1 --bind-tcp=127.0.0.1:14500 --html=on \
+    --daemon=no --systemd-run=no --notifications=no --tray=no
+```
+
+```bat
+:: Windows client (install Xpra first): attach over SSH
+Xpra_cmd.exe attach ssh://USER@HOST/14500
+```
+
+Shadow keeps the **same** Chrome and the same saved logins. Seamless mode (`xpra seamless`) gives a
+single Chrome window but needs its own profile. Neither is installed by default — the browser door
+stays the default because it needs nothing on the client. Tested commands, the Windows client, the
+seamless variant and the security rules: [docs/native-window.md](docs/native-window.md).
+
+Why not RDP RemoteApp: single-application RDP requires Windows Server with per-user licences, and on
+Linux `xrdp` publishes a whole desktop, not individual applications.
+
 ## Requirements
 
 - Ubuntu 22.04/24.04 (tested on 24.04, Chrome 156, TigerVNC 1.13). Any Debian-family distro with
@@ -116,6 +163,7 @@ Verifying display :9 (VNC 5909, web 6089)
   PASS  websockify -> VNC proven (first frame: b'RFB 003.008\n')
   PASS  X session answers on :9 (active window: New Tab - Google Chrome)
   PASS  Chrome on :9 executes JS (CDP 9339, readyState=complete)
+  PASS  profile persists at /home/op3/.config/hermes-desktop/chrome-9 (8.2M)
 
 RESULT: display :9 is live.  Browser door: http://192.168.0.102:6089/vnc.html
 ```
@@ -167,7 +215,10 @@ control port as part of the install.
 install.sh              provision / verify / uninstall (bash, no dependencies beyond apt)
 bin/desktop_input.py    X11-level click/type/key, geometry read over CDP
 docs/input-ladder.md    the four input paths, with code and the decision rule
+docs/profile-persistence.md  Chrome vs Chromium, signing in, backup, password store
+docs/native-window.md   optional Xpra lane for a native-looking window (Windows client)
 docs/troubleshooting.md symptom -> cause -> fix, from measured failures
+systemd/                example unit for the optional Xpra lane
 skill/SKILL.md          Hermes skill file: drop into a Hermes skills dir
 AGENTS.md               instructions for an agent told "set this up"
 ```

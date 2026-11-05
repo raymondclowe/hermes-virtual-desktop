@@ -1,0 +1,23 @@
+# Example only: wrap `xpra shadow` in a systemd unit.
+# Copy to /etc/systemd/system/xpra-shadow-1.service, change User, display and port.
+# See docs/native-window.md. Nothing in install.sh creates this — it is the
+# optional native-window lane, not part of the default desktop.
+[Unit]
+Description=Xpra shadow of desktop :1 (native-window lane)
+After=hermes-vnc-1.service
+Wants=hermes-vnc-1.service
+
+[Service]
+Type=simple
+User=YOURUSER
+Group=YOURUSER
+Environment=HOME=/home/YOURUSER
+Environment=DISPLAY=:1
+# The xpra launcher takes python3 from PATH; pin the system interpreter so a
+# user venv (3.14 etc.) cannot shadow the distro package.
+ExecStart=/usr/bin/python3 /usr/bin/xpra shadow :1 --bind-tcp=127.0.0.1:14500 --html=on --daemon=no --systemd-run=no --notifications=no --tray=no
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

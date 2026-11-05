@@ -41,7 +41,8 @@ not the presence of files.
    ./install.sh --verify <N>
    ```
    Required: services active, X socket, VNC loopback-only, noVNC listening, RFB handshake,
-   `/vnc.html` 200, websockify proven, X session answering, and **Chrome executes JS**.
+   `/vnc.html` 200, websockify proven, X session answering, **Chrome executes JS**, and the
+   **profile directory exists on disk**.
 
 6. Prove the agent path end to end, not just the ports:
    ```bash
@@ -66,8 +67,18 @@ not the presence of files.
   without an explicit instruction. It is a passwordless desktop.
 - **Never** type credentials. If a site needs a login, hand the human the browser door URL and ask
   them to log in once on that desktop.
-- One Chrome per install. Do not point two agents at the same CDP port; each install has its own
+- One browser per install. Do not point two agents at the same CDP port; each install has its own
   profile and port for that reason.
+- **Never delete or relocate the browser profile**, and never start the browser with `--incognito`,
+  `--guest` or a temporary `--user-data-dir`. The profile at
+  `~/.config/hermes-desktop/<browser>-<display>` is what keeps the human logged in and what makes
+  Chrome Sync carry their bookmarks and passwords. Losing it is losing their setup.
+- Prefer Chrome over Chromium: only Chrome can sign in to Chrome Sync. Use `--browser chromium` only
+  on arm64 (Google publishes no Chrome there) or when the human asks; tell them Sync will not work,
+  the profile still persists.
+- If the human is on Windows, Hermes is on a remote Linux host, and they ask for a native-looking
+  window instead of a browser tab, point them at `docs/native-window.md`. Do not install Xpra unless
+  they ask for that lane.
 - Prefer the DOM/CDP path (`locator.click`) for ordinary work. Use `bin/desktop_input.py` only when
   the page ignores CDP input or a human needs to see the click. Do not mix both for the same action.
 - If a step fails, read `docs/troubleshooting.md` and fix the cause. Do not add a second automation
@@ -75,5 +86,6 @@ not the presence of files.
 
 ## What "done" means
 
-`./install.sh --verify <N>` prints `RESULT: display :<N> is live` with ten PASS lines, and the
-`where` command in step 6 returns coordinates. Nothing less.
+`./install.sh --verify <N>` prints `RESULT: display :<N> is live` with eleven PASS lines (including
+`Chrome ... executes JS` and `profile persists at ...`), and the `where` command in step 6 returns
+coordinates. Nothing less.

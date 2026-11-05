@@ -35,10 +35,18 @@ Never fix an input problem by installing a second automation stack (bb-browser, 
 Fingerprint-level blocks are a browser-profile problem: log in once by hand on this desktop and reuse
 the profile.
 
+## The profile is the point
+
+The browser keeps a **persistent profile** at `~/.config/hermes-desktop/<browser>-<display>/`.
+Chrome is preferred because only the Google build can sign in to Chrome Sync (bookmarks, passwords,
+extensions). Chromium works for everything else but cannot sync. Never delete the profile, never use
+`--incognito` or a temp profile, and sign in once through the browser door — the agent's browser is
+then already logged in.
+
 ## Verify before claiming it works
 
-`./install.sh --verify N` must end `RESULT: display :N is live` with ten PASS lines, including
-`Chrome on :N executes JS`. Services "active" is not proof: a Chrome with a dead zygote still listens
+`./install.sh --verify N` must end `RESULT: display :N is live` with eleven PASS lines, including
+`Chrome on :N executes JS` and `profile persists at ...`. Services "active" is not proof: a Chrome with a dead zygote still listens
 on its CDP port while every tab hangs. That failure's fix is the `XDG_RUNTIME_DIR` and
 `DBUS_SESSION_BUS_ADDRESS` entries in the Chrome unit — see `docs/troubleshooting.md`.
 
@@ -49,3 +57,5 @@ on its CDP port while every tab hangs. That failure's fix is the `XDG_RUNTIME_DI
 - Never type credentials into it; send the human the URL for that step.
 - One Chrome per install; never share a CDP port between agents.
 - Never stop or uninstall a display another session may be using.
+- Windows client + remote Linux host + wants a native window: `docs/native-window.md` (Xpra). Optional
+  lane — do not install it unless asked.

@@ -24,6 +24,8 @@
 #   --no-ufw           do not touch the firewall
 #   --no-chrome        desktop only, no Chrome unit
 #   --cdp-port P       Chrome DevTools port        (default 9333)
+#   --browser NAME     chrome | chromium | auto    (default auto: Chrome first)
+#   --profile-dir DIR  browser profile directory   (default: persistent, per display)
 #   --dry-run          show the files, write nothing
 #   --verify N         run the checks for display N and exit
 #   --uninstall N      stop+disable+remove display N's units
@@ -41,6 +43,8 @@ ALLOW_CIDR="192.168.0.0/24"
 USE_UFW=1
 WITH_CHROME=1
 CDP_PORT=9333
+BROWSER="auto"
+PROFILE_DIR=
 DRY_RUN=0
 MODE="install"
 VERIFY_ONLY=""
@@ -59,6 +63,8 @@ while [[ $# -gt 0 ]]; do
     --no-ufw)      USE_UFW=0; shift ;;
     --no-chrome)   WITH_CHROME=0; shift ;;
     --cdp-port)    CDP_PORT="$2"; shift 2 ;;
+    --browser)     BROWSER="$2"; shift 2 ;;
+    --profile-dir) PROFILE_DIR="$2"; shift 2 ;;
     --dry-run)     DRY_RUN=1; shift ;;
     --verify)      MODE="verify"; VERIFY_ONLY="$2"; shift 2 ;;
     --uninstall)   MODE="uninstall"; VERIFY_ONLY="$2"; shift 2 ;;
@@ -80,7 +86,7 @@ VNC_UNIT="hermes-vnc-${DISPLAY_NUM}"
 NOVNC_UNIT="hermes-novnc-${DISPLAY_NUM}"
 CHROME_UNIT="hermes-chrome-${DISPLAY_NUM}"
 XSTARTUP="${HOME_DIR}/.vnc/xstartup${DISPLAY_NUM}"
-CHROME_PROFILE="${HOME_DIR}/.config/chrome-desktop-${DISPLAY_NUM}"
+PROFILE_ROOT="${HOME_DIR}/.config/hermes-desktop"
 HOSTNAME_SHORT="$(hostname -s)"
 
 have_sudo() { sudo -n true 2>/dev/null; }
@@ -211,6 +217,18 @@ PY
       skip-no-websockets)           say "SKIP  Chrome render check (python websockets not installed)" ;;
       *) say "FAIL  Chrome on :${n} does not render: ${rc}"; fails=$((fails+1)) ;;
     esac
+
+    # The profile is the whole point: it keeps logins, bookmarks and extensions.
+    local prof
+    prof=$(systemctl show -p ExecStart --value "$cunit" 2>/dev/null \
+           | grep -o 'user-data-dir=[^ ]*' | cut -d= -f2 | head -1)
+    if [[ -n "$prof" ]]; then
+      if [[ -d "$prof" ]]; then
+        say "PASS  profile persists at ${prof} ($(du -sh "$prof" 2>/dev/null | cut -f1))"
+      else
+        say "FAIL  profile directory missing: ${prof}"; fails=$((fails+1))
+      fi
+    fi
   fi
 
   echo
@@ -227,6 +245,8 @@ if [[ "$MODE" == "verify" ]]; then verify "$VERIFY_ONLY"; exit $?; fi
 # ------------------------------------------------------------- uninstall ----
 if [[ "$MODE" == "uninstall" ]]; then
   have_sudo || die "sudo needed to remove systemd units"
+  # Capture the profile path before the unit file goes away.
+  kept="$(grep -o 'user-data-dir=[^ ]*' "/etc/systemd/system/hermes-chrome-${VERIFY_ONLY}.service" 2>/dev/null | cut -d= -f2 || true)"
   for u in "hermes-chrome-${VERIFY_ONLY}" "hermes-novnc-${VERIFY_ONLY}" "hermes-vnc-${VERIFY_ONLY}"; do
     sudo systemctl disable --now "$u" 2>/dev/null || true
     sudo rm -f "/etc/systemd/system/${u}.service"
@@ -234,8 +254,9 @@ if [[ "$MODE" == "uninstall" ]]; then
   done
   sudo systemctl daemon-reload
   rm -f "${HOME_DIR}/.vnc/xstartup${VERIFY_ONLY}"
-  rm -rf "${HOME_DIR}/.config/chrome-desktop-${VERIFY_ONLY}"
+  # The browser profile is never deleted: it holds logins, bookmarks and extensions.
   echo "Display :${VERIFY_ONLY} removed (log files under ${HOME_DIR}/.vnc/ left in place)."
+  [[ -n "$kept" && -d "$kept" ]] && echo "Browser profile kept at ${kept} — delete it yourself only if you want to lose those logins."
   exit 0
 fi
 
@@ -259,6 +280,66 @@ if [[ "${MISSING_PKGS:-0}" == "1" ]]; then
   fi
 else
   say "tigervnc, noVNC, websockify and XFCE all present"
+fi
+
+hdr "Browser"
+BROWSER_BIN=""
+BROWSER_NAME=""
+if [[ "$WITH_CHROME" == "1" ]]; then
+  case "$BROWSER" in
+    chrome|chromium|auto) ;;
+    *) die "--browser must be chrome, chromium or auto" ;;
+  esac
+  pick() { for b in "$@"; do command -v "$b" 2>/dev/null && return 0; done; return 1; }
+  case "$BROWSER" in
+    chrome)   BROWSER_BIN=$(pick google-chrome google-chrome-stable || true) ;;
+    chromium) BROWSER_BIN=$(pick chromium chromium-browser || true) ;;
+    auto)     BROWSER_BIN=$(pick google-chrome google-chrome-stable chromium chromium-browser || true) ;;
+  esac
+
+  if [[ -z "$BROWSER_BIN" ]]; then
+    # Chrome (the Google build) is preferred: only it can sign in to Chrome Sync,
+    # which is what carries bookmarks and the password manager between machines.
+    if [[ "$BROWSER" != "chromium" && "$(uname -m)" == "x86_64" ]]; then
+      say "Chrome not installed — installing google-chrome-stable"
+      if [[ "$DRY_RUN" == "1" ]]; then
+        say "[dry-run] would download google-chrome-stable_current_amd64.deb and install it"
+        BROWSER_BIN="google-chrome"
+      else
+        have_sudo || die "sudo needed to install Chrome"
+        deb="$(mktemp -d)/google-chrome.deb"
+        curl -fsSL -o "$deb" https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+          || die "could not download Chrome (no network?)"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$deb" || die "Chrome install failed"
+        BROWSER_BIN=$(pick google-chrome google-chrome-stable || true)
+      fi
+    else
+      [[ "$BROWSER" == "chrome" ]] && say "Chrome is not published for $(uname -m) — using Chromium"
+      say "Chromium not installed — installing chromium-browser"
+      if [[ "$DRY_RUN" == "1" ]]; then
+        say "[dry-run] would run: sudo apt-get install -y chromium-browser"
+        BROWSER_BIN="chromium"
+      else
+        have_sudo || die "sudo needed to install Chromium"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chromium-browser || die "Chromium install failed"
+        BROWSER_BIN=$(pick chromium chromium-browser || true)
+      fi
+    fi
+  fi
+  [[ -n "$BROWSER_BIN" ]] || die "no usable browser found"
+
+  case "$(basename "$BROWSER_BIN")" in
+    *chromium*) BROWSER_NAME="chromium" ;;
+    *)          BROWSER_NAME="chrome" ;;
+  esac
+  PROFILE_DIR="${PROFILE_DIR:-${PROFILE_ROOT}/${BROWSER_NAME}-${DISPLAY_NUM}}"
+  [[ "$PROFILE_DIR" = /* ]] || die "--profile-dir must be an absolute path"
+  case "$PROFILE_DIR" in
+    /tmp/*|/run/*|/var/tmp/*) die "profile must persist across reboots — refusing a temporary profile dir: $PROFILE_DIR" ;;
+  esac
+  say "browser: ${BROWSER_BIN} (${BROWSER_NAME}) — profile ${PROFILE_DIR}"
+  [[ "$BROWSER_NAME" == "chromium" ]] && \
+    say "note: Chromium cannot sign in to Chrome Sync (no Google API keys). The profile still persists."
 fi
 
 if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qx "0.0.0.0:${WEB_PORT}"; then
@@ -340,7 +421,7 @@ Environment=XDG_RUNTIME_DIR=/run/user/${TARGET_UID}
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${TARGET_UID}/bus
 # Chrome 136+ refuses --remote-debugging-port without an explicit --user-data-dir.
 ExecStartPre=/bin/sleep 5
-ExecStart=/opt/google/chrome/google-chrome --user-data-dir=${CHROME_PROFILE} --remote-debugging-port=${CDP_PORT} --renderer-process-limit=15 --remote-allow-origins=* --no-first-run --no-default-browser-check --password-store=basic --start-maximized
+ExecStart=/opt/google/chrome/google-chrome --user-data-dir=${PROFILE_DIR} --remote-debugging-port=${CDP_PORT} --renderer-process-limit=15 --remote-allow-origins=* --no-first-run --no-default-browser-check --password-store=basic --start-maximized
 Restart=on-failure
 RestartSec=5
 MemoryMax=2G
@@ -386,7 +467,7 @@ fi
 if [[ "$WITH_CHROME" == "1" ]]; then
   printf '%s' "$CHROME_UNIT_CONTENT" > "${tmpd}/${CHROME_UNIT}.service"
   sudo install -m 644 "${tmpd}/${CHROME_UNIT}.service" "/etc/systemd/system/${CHROME_UNIT}.service"
-  say "/etc/systemd/system/${CHROME_UNIT}.service (profile ${CHROME_PROFILE}, CDP ${CDP_PORT})"
+  say "/etc/systemd/system/${CHROME_UNIT}.service (profile ${PROFILE_DIR}, CDP ${CDP_PORT})"
 fi
 rm -rf "$tmpd"
 
@@ -413,6 +494,9 @@ Next steps
   Browser:  http://$(hostname -I | awk '{print $1}'):${WEB_PORT}/vnc.html
   Agent:    CDP at http://127.0.0.1:${CDP_PORT} — connect_over_cdp, or drive real
             X11 input with bin/desktop_input.py. Log in once via the browser door.
+  Profile:  ${PROFILE_DIR}
+            persistent: sign in to Chrome once and bookmarks/passwords sync from
+            your other machines. Nothing here is wiped on rebuild or reboot.
   Re-check: $0 --verify ${DISPLAY_NUM}
   Remove:   $0 --uninstall ${DISPLAY_NUM}
 EOF
