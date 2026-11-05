@@ -47,8 +47,13 @@ state the human may be looking at, and any half-typed form.
 
 ## 3. When CDP input is refused
 
-Some sites treat a CDP-injected click as untrusted: `isTrusted` is false, no navigation, no error.
-Check before assuming the page is broken:
+A CDP-injected click arrives with `isTrusted: true` — Chrome sets that flag itself — so a site that
+checks only the flag will accept it. Sites that block automation use other signals: a pointer that
+jumps straight to the target with no hover trail, keystroke timing that is too regular, a browser
+carrying automation switches, their own challenge script, or account-level scoring. The click is
+accepted and does nothing, and nothing is thrown.
+
+Check whether the event arrives at all before concluding anything:
 
 ```python
 page.evaluate("""() => new Promise(r => {
@@ -57,7 +62,8 @@ page.evaluate("""() => new Promise(r => {
 })""")
 ```
 
-If that never fires, or fires with `trusted: false`, stop fighting the DOM. Two things work:
+If it never fires, the click is not reaching the page. If it fires with `trusted: true` and the site
+still ignores it, the site is detecting the automation — stop fighting the DOM. Two things work:
 
 ### 3a. Real input at the Windows level with AutoIt
 

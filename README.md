@@ -149,7 +149,7 @@ What "default behaviour does not work well" means here, and what to do instead:
 |---|---|---|
 | browser never appears, CDP still answers | a service-started Chrome lives in session 0, which has no visible desktop | start it from the interactive session — the script's Scheduled Task does exactly that |
 | browser dies with the agent | the agent launched it as a child | keep them separate; reconnect with `connect_over_cdp`, never relaunch |
-| **clicks silently do nothing on high-security sites** | the site detects CDP-injected input; the event arrives with `isTrusted` false and is ignored, no error | send **real Windows input** — AutoIt `MouseMove`/`MouseClick`/`Send`, or its `AutoItX3.Control` COM object — at coordinates you obtained from CDP (reading the page still works; only input is refused) |
+| **clicks silently do nothing on high-security sites** | not a trust flag: CDP clicks arrive with `isTrusted: true`. The site is reading behaviour and fingerprints — a pointer that teleports with no hover trail, machine-regular typing, its own challenge script — so the click is accepted and ignored, with no error | send **real Windows input** — AutoIt `MouseMove`/`MouseClick`/`Send`, or its `AutoItX3.Control` COM object — at coordinates you obtained from CDP (reading the page still works; only input is refused) |
 | every tab hangs | no renderer (GPU sandbox, or a stale profile lock) | check `chrome://gpu`; one profile, one running browser |
 
 Before reaching for real clicks, check whether the site offers a route that needs no pointer at all —
@@ -172,12 +172,29 @@ WSL2 is the better answer for anything a human may later need to see; headless i
 
 ## Recipe 5: macOS host
 
-macOS has no X display, so the Linux recipes do not apply.
+macOS has no X display, so the Linux recipes do not apply. Two shapes:
 
-- **A Linux VM (Lima, UTM, or a cloud box) running Recipe 1.** Closest to the documented setup, and the
-  browser door then works from any device.
-- **A local Chrome with `--remote-debugging-port`**, launched from the user's own session, for driving
-  only. There is no built-in screen-sharing equivalent to noVNC; if the human must watch, use the VM.
+**a) A Linux VM (Lima, UTM, or a cloud box) running Recipe 1.** Closest to the documented setup and the
+browser door then works from any device. Choose this when the human must watch the screen.
+
+**b) A local Chrome with `--remote-debugging-port`, started in the user's own session.** Driving only —
+there is no built-in screen-sharing equivalent to noVNC.
+
+```bash
+PROFILE="$HOME/Library/Application Support/hermes-desktop/browser-9333"
+mkdir -p "$PROFILE"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --user-data-dir="$PROFILE" --remote-debugging-port=9333 \
+  --no-first-run --window-position=0,0 --window-size=1440,900 &
+```
+
+Keep it alive with a `~/Library/LaunchAgents` plist (`RunAtLoad` true, `KeepAlive` true) rather than
+parenting it to the agent, so an agent restart does not take the logged-in browser with it.
+
+Real input on macOS, when a site ignores CDP: `brew install cliclick`, then
+`cliclick c:640,420` and `cliclick t:"text"`. Two gates — the calling app needs **Accessibility**
+permission in System Settings → Privacy & Security, and coordinates are in *points* while a Retina
+display's pixels are double, so convert before trusting a sequence.
 
 Do not attempt TigerVNC or Xpra on macOS for this purpose — support is not there in a form worth
 relying on.

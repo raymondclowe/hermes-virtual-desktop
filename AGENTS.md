@@ -46,8 +46,11 @@ not the presence of files.
 
 6. Prove the agent path end to end, not just the ports:
    ```bash
-   python3 bin/desktop_input.py --display :<N> --cdp http://127.0.0.1:<C> open 'https://example.com'
-   python3 bin/desktop_input.py --display :<N> --url-contains example.com where --selector 'h1' --dry-run
+   python3 bin/desktop_input.py --display :<N> --cdp http://127.0.0.1:<C> open "file://$PWD/bin/selftest.html"
+   python3 bin/desktop_input.py --display :<N> --url-contains selftest where --selector '#ok' --dry-run
+   python3 bin/desktop_input.py --display :<N> --url-contains selftest click --selector '#btn'
+   python3 bin/desktop_input.py --display :<N> --url-contains selftest type  --selector '#name' --text 'hello'
+   # the page reports itself: the title becomes "Hermes desktop selftest - 1 clicks"
    ```
    The second command must print a screen coordinate and a label. If it says
    `no matching page target`, the tab did not load — go to troubleshooting before claiming success.
@@ -56,7 +59,7 @@ not the presence of files.
    ```
    Desktop:  http://<host-ip>:<P>/vnc.html
    Agent:    http://127.0.0.1:<C>  (CDP)
-   Verify:   ./install.sh --verify <N>  (11/11)
+   Verify:   ./install.sh --verify <N>  (no FAIL lines)
    ```
 
 ## If the host is Windows
