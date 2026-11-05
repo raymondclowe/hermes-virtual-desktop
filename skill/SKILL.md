@@ -50,6 +50,12 @@ then already logged in.
 on its CDP port while every tab hangs. That failure's fix is the `XDG_RUNTIME_DIR` and
 `DBUS_SESSION_BUS_ADDRESS` entries in the Chrome unit — see `docs/troubleshooting.md`.
 
+## Windows host (Hermes on the same machine as the human)
+
+No VNC, no Xpra. Run `windows/install.ps1`: a dedicated Chrome profile, a CDP port on
+`127.0.0.1:9333`, a visible window, and a Scheduled Task at logon (a service could not show a window).
+Never use the human's default Chrome profile — Chrome locks a profile to one process.
+
 ## Rules
 
 - The noVNC port is a passwordless desktop as that user. LAN-only, ufw-restricted; never

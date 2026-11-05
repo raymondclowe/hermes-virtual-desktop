@@ -26,6 +26,15 @@ There is no single product name. Use the parts, or the category:
 | browser-based remote desktop / VDI | the industry category |
 | computer-use desktop / agent desktop | the agent case: the same screen is where the agent's browser runs |
 
+## Which case are you in?
+
+| Where Hermes runs | Where the human is | Use | Installer |
+|---|---|---|---|
+| Linux, any | any device with a browser | the browser door (noVNC) — the default | `./install.sh` |
+| Linux | Windows/Linux/macOS, wants a native window | Xpra shadow (keeps the same profile) | [docs/native-window.md](docs/native-window.md) |
+| Windows, same machine as the human | at that machine | its own Chrome window + CDP, no transport at all | [windows/install.ps1](windows/) |
+| Windows, headless | anywhere | the Linux stack inside WSL2, browser door | `./install.sh` in WSL |
+
 ## Quick start
 
 ```bash
@@ -140,6 +149,28 @@ seamless variant and the security rules: [docs/native-window.md](docs/native-win
 Why not RDP RemoteApp: single-application RDP requires Windows Server with per-user licences, and on
 Linux `xrdp` publishes a whole desktop, not individual applications.
 
+## Windows: Hermes on the same machine as the human
+
+Nothing to stream. The human's own session is the desktop, so the only job is a Chrome the agent can
+drive, in a window the human can see, with a profile that keeps logins:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/install.ps1
+```
+
+It finds Chrome (Edge as fallback), creates `%LOCALAPPDATA%\hermes-desktop\browser-<port>`, registers
+a **Scheduled Task at logon** — a service in session 0 could never show a window — starts the browser
+now, and proves CDP answers on `127.0.0.1:<port>`. `-Uninstall` removes the task and keeps the profile.
+
+Never point it at the human's normal Chrome profile: Chrome locks a profile to one process, so the
+agent's launch would exit and automation would land in their live session. Details:
+[windows/README.md](windows/README.md).
+
+Verified on Windows 11 with PowerShell 5.1: script parses clean, Chrome detected at
+`C:\Program Files\Google\Chrome\Application\chrome.exe`, and the logon task registers `Ready`
+for the current identity. The live browser launch is the one step that needs a real run on the target
+machine.
+
 ## Requirements
 
 - Ubuntu 22.04/24.04 (tested on 24.04, Chrome 156, TigerVNC 1.13). Any Debian-family distro with
@@ -219,6 +250,7 @@ docs/profile-persistence.md  Chrome vs Chromium, signing in, backup, password st
 docs/native-window.md   optional Xpra lane for a native-looking window (Windows client)
 docs/troubleshooting.md symptom -> cause -> fix, from measured failures
 systemd/                example unit for the optional Xpra lane
+windows/                PowerShell installer for Hermes running on Windows itself
 skill/SKILL.md          Hermes skill file: drop into a Hermes skills dir
 AGENTS.md               instructions for an agent told "set this up"
 ```

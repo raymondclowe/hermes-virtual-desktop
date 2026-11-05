@@ -56,8 +56,27 @@ not the presence of files.
    ```
    Desktop:  http://<host-ip>:<P>/vnc.html
    Agent:    http://127.0.0.1:<C>  (CDP)
-   Verify:   ./install.sh --verify <N>  (10/10)
+   Verify:   ./install.sh --verify <N>  (11/11)
    ```
+
+## If the host is Windows
+
+Do not install the Linux stack there. Run `windows/install.ps1` instead: it gives the agent a Chrome
+on a CDP port, in a window the human can see, with a persistent profile, started by a Scheduled Task
+at logon.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/install.ps1 -CdpPort 9333
+Invoke-RestMethod http://127.0.0.1:9333/json/version     # must return the browser version
+```
+
+Rules that matter on Windows:
+
+- **Never** point `--user-data-dir` at the human's normal Chrome profile. Chrome locks a profile to
+  one process; the agent's launch would exit and automation would land in their live session.
+- **Never** install it as a Windows service: session 0 has no desktop, so the window would be
+  invisible to the human. The Scheduled Task runs in their interactive session.
+- Verify by reading `/json/version` back. "The window opened" is not proof the agent can connect.
 
 ## Rules
 
