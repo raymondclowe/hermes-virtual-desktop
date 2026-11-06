@@ -45,6 +45,7 @@
 #                  ufw allow-list, and for real secrecy tunnel over SSH.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DISPLAY_NUM=1
 WEB_PORT=6080
 GEOMETRY="1440x900"
@@ -100,6 +101,7 @@ VNC_PORT=$((5900 + DISPLAY_NUM))
 HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 [[ -n "$HOME_DIR" && -d "$HOME_DIR" ]] || die "no home directory for user $TARGET_USER"
 TARGET_UID="$(id -u "$TARGET_USER")"
+HERMES_SKILL_DIR="${HOME_DIR}/.hermes/skills/virtual-desktop"
 
 VNC_UNIT="hermes-vnc-${DISPLAY_NUM}"
 NOVNC_UNIT="hermes-novnc-${DISPLAY_NUM}"
@@ -482,6 +484,23 @@ hdr "Write systemd units (system units — survive reboot, start at boot)"
 # pretend a longer password buys anything.
 as_target() { if [[ "$EUID" -eq 0 ]]; then sudo -u "$TARGET_USER" "$@"; else "$@"; fi; }
 
+install_hermes_skill() {
+  local skill_dir="$1"
+  as_target install -d -m 755 \
+    "$skill_dir" "$skill_dir/references" "$skill_dir/references/docs" \
+    "$skill_dir/references/windows" "$skill_dir/references/systemd" "$skill_dir/bin"
+  as_target install -m 644 "$SCRIPT_DIR/skill/SKILL.md" "$skill_dir/SKILL.md"
+  as_target install -m 644 "$SCRIPT_DIR/README.md" "$skill_dir/references/README.md"
+  as_target install -m 644 "$SCRIPT_DIR/AGENTS.md" "$skill_dir/references/AGENTS.md"
+  as_target cp -R "$SCRIPT_DIR/docs/." "$skill_dir/references/docs/"
+  as_target cp -R "$SCRIPT_DIR/windows/." "$skill_dir/references/windows/"
+  as_target cp -R "$SCRIPT_DIR/systemd/." "$skill_dir/references/systemd/"
+  as_target install -m 755 "$SCRIPT_DIR/bin/desktop_input.py" "$skill_dir/bin/desktop_input.py"
+  as_target install -m 644 "$SCRIPT_DIR/bin/selftest.html" "$skill_dir/bin/selftest.html"
+  printf '%s\n' "$SCRIPT_DIR" | as_target tee "$skill_dir/SOURCE_REPO" >/dev/null
+  say "installed Hermes skill and references at ${skill_dir}"
+}
+
 if [[ "$WANT_PASSWORD" == "1" ]]; then
   hdr "Access"
   pass_dir="${HOME_DIR}/.vnc"
@@ -593,6 +612,7 @@ WantedBy=multi-user.target
 "
 
 if [[ "$DRY_RUN" == "1" ]]; then
+  say "[dry-run] would install Hermes virtual-desktop skill at ${HERMES_SKILL_DIR}"
   hdr "[dry-run] ${VNC_UNIT}.service"; echo "$VNC_UNIT_CONTENT"
   hdr "[dry-run] ${NOVNC_UNIT}.service"; echo "$NOVNC_UNIT_CONTENT"
   [[ "$WITH_CHROME" == "1" ]] && { hdr "[dry-run] ${CHROME_UNIT}.service"; echo "$CHROME_UNIT_CONTENT"; }
@@ -631,6 +651,8 @@ if [[ "$WITH_CHROME" == "1" ]]; then
   say "/etc/systemd/system/${CHROME_UNIT}.service (profile ${PROFILE_DIR}, CDP ${CDP_PORT})"
 fi
 rm -rf "$tmpd"
+
+install_hermes_skill "$HERMES_SKILL_DIR"
 
 hdr "Firewall"
 if [[ "$USE_UFW" == "1" ]] && command -v ufw >/dev/null && sudo ufw status 2>/dev/null | grep -q "Status: active"; then

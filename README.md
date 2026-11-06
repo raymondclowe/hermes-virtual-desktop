@@ -209,6 +209,10 @@ relying on.
 | `hermes-novnc-<N>.service` | websockify serving noVNC, so a browser tab is the desktop |
 | `hermes-chrome-<N>.service` | the browser on `:<N>`, own **persistent** profile, CDP port, memory/task caps |
 
+On Linux, installation also copies the `virtual-desktop` Hermes skill, its reference guides, and the
+input helper to `~/.hermes/skills/virtual-desktop`. The Windows installer does the same for the
+current user. The skill includes the source checkout path and checks this repository for updated advice.
+
 Flags: `--display`, `--web-port`, `--geometry`, `--user`, `--allow-cidr`, `--no-ufw`, `--no-chrome`,
 `--cdp-port`, `--browser auto|chrome|chromium`, `--profile-dir`, `--generate-password`,
 `--vnc-password-stdin`, `--password-file`, `--suggest`, `--dry-run`, `--verify N`, `--uninstall N`.

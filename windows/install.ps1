@@ -37,10 +37,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $TaskName = "HermesDesktopBrowser-$CdpPort"
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$HermesSkillDir = Join-Path $env:USERPROFILE '.hermes\skills\virtual-desktop'
 
 function Say($m) { Write-Host "  $m" }
 # One clean line on stderr, no Write-Error invocation frame around it.
 function Die($m) { [Console]::Error.WriteLine($m); exit 1 }
+
+function Install-HermesSkill {
+    $references = Join-Path $HermesSkillDir 'references'
+    $referenceDirs = @('docs', 'windows', 'systemd')
+    New-Item -ItemType Directory -Force -Path $HermesSkillDir, $references, (Join-Path $references 'docs'), (Join-Path $references 'windows'), (Join-Path $references 'systemd'), (Join-Path $HermesSkillDir 'bin') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'skill\SKILL.md') -Destination (Join-Path $HermesSkillDir 'SKILL.md') -Force
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'README.md') -Destination (Join-Path $references 'README.md') -Force
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'AGENTS.md') -Destination (Join-Path $references 'AGENTS.md') -Force
+    foreach ($directory in $referenceDirs) {
+        $source = Join-Path $RepoRoot $directory
+        $destination = Join-Path $references $directory
+        Copy-Item -Path (Join-Path $source '*') -Destination $destination -Recurse -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'bin\desktop_input.py') -Destination (Join-Path $HermesSkillDir 'bin\desktop_input.py') -Force
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'bin\selftest.html') -Destination (Join-Path $HermesSkillDir 'bin\selftest.html') -Force
+    Set-Content -LiteralPath (Join-Path $HermesSkillDir 'SOURCE_REPO') -Value $RepoRoot -Encoding utf8
+    Say "installed Hermes skill and references at $HermesSkillDir"
+}
 
 if ([string]::IsNullOrWhiteSpace($ProfileDir)) {
     $ProfileDir = Join-Path $env:LOCALAPPDATA "hermes-desktop\browser-$CdpPort"
@@ -144,6 +164,7 @@ if ($existing.Count -gt 0) {
 
 if ($DryRun) {
     Say '[dry-run] would create the profile directory'
+    Say ("[dry-run] would install Hermes virtual-desktop skill at " + $HermesSkillDir)
     Say ('[dry-run] would register scheduled task at logon: ' + $exe + ' ' + $arguments)
     Say '[dry-run] would start it now and check /json/version'
     exit 0
@@ -156,6 +177,8 @@ else {
     New-Item -ItemType Directory -Force -Path $fullProfile | Out-Null
     Say "created profile directory"
 }
+
+Install-HermesSkill
 
 function Get-CdpVersion {
     try {
