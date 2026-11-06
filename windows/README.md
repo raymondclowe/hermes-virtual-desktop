@@ -29,6 +29,7 @@ What it does:
 | autostart | a **Scheduled Task at logon**, in the interactive session |
 | starts it now | then proves CDP answers on `/json/version` |
 | exposure | CDP binds to `127.0.0.1` only — nothing on the LAN |
+| Hermes skill | copies the virtual-desktop skill and its references to `%USERPROFILE%\.hermes\skills\virtual-desktop` |
 
 Options: `-CdpPort`, `-ProfileDir`, `-Browser chrome|edge|auto`, `-NoAutostart`, `-DryRun`,
 `-Uninstall` (removes the task, keeps the profile).

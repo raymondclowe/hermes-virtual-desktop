@@ -1,67 +1,92 @@
 ---
 name: virtual-desktop
-description: Use when a host needs a browser-visible desktop or a CDP-drivable Chrome.
+description: Set up, use, manage, troubleshoot, and change the viewing channel for this Hermes desktop.
 ---
 
 # Virtual desktop + agent-drivable Chrome
 
-A host can carry its own desktop, visible in any browser, with a Chrome the agent drives over CDP.
-Install it with one command from the public repo:
+This skill covers the desktop provisioned by `hermes-virtual-desktop`. The setup installs this directory
+at `~/.hermes/skills/virtual-desktop`, with the referenced guides under `references/` and the Linux
+`desktop_input.py` helper under `bin/`. `SOURCE_REPO` records the checkout used for installation.
+
+## Keep advice current
+
+Before changing the setup, first read the local `references/AGENTS.md` and the relevant guides in
+`references/docs/`. Then check `SOURCE_REPO` for the original checkout. Verify that its `origin` is
+`https://github.com/raymondclowe/hermes-virtual-desktop.git` and review the current `AGENTS.md`,
+`README.md`, `skill/SKILL.md`, and relevant `docs/` files there for newer guidance. If the checkout
+is missing or stale and network access is allowed, fetch upstream refs and review the commits and file
+changes without changing the working tree; otherwise consult the canonical repository before
+proceeding. Do not pull, reset, or replace a checkout with unreviewed content.
+The installed references are a fallback snapshot, not a substitute for checking the source repo.
+
+## Set up and identify the desktop
+
+For Linux, follow the full preflight and safety steps in `references/AGENTS.md`. Preview with
+`./install.sh --dry-run`, ensure the intended ports and display are unused, and install with
+`./install.sh --display N --web-port P --cdp-port C`. The installer also installs this Hermes skill.
+Never replace a working display owned by another session; choose a separate display and ports.
+
+For Windows when Hermes and the human use the same machine, use
+`windows/install.ps1 -CdpPort P` from the source checkout. It installs a dedicated Chrome profile,
+starts a visible browser in the interactive session, and installs this skill. It does not create a
+VNC or Xpra desktop. See `references/windows/README.md`.
+
+On Linux, display `:N` uses VNC port `5900+N`, noVNC port `6079+N`, and the default CDP port
+`9332+N`. The browser profile is `~/.config/hermes-desktop/<browser>-N`. Use the install output or
+service files for custom ports and profile paths. The human's noVNC door is
+`http://<host>:<web-port>/vnc.html`; the agent's CDP endpoint is `http://127.0.0.1:<cdp-port>`.
+
+Do not claim success from files or active services alone. On Linux, run `./install.sh --verify N` and
+require no FAIL lines, including the Chrome JavaScript execution and profile persistence checks.
+On Windows, verify `http://127.0.0.1:<cdp-port>/json/version` returns the expected browser.
+
+## Manage and drive it
+
+Use the configured display's `./install.sh --verify N` to inspect health. Use
+`systemctl status hermes-vnc-N hermes-novnc-N hermes-chrome-N` and `journalctl -u <unit>` for Linux
+diagnostics. Restart or uninstall only the specific display this session created and only when asked;
+`./install.sh --uninstall N` leaves the browser profile and this shared skill intact. On Windows,
+rerunning `windows/install.ps1` reuses its dedicated profile; `-Uninstall` removes its scheduled task
+but deliberately keeps the profile.
+
+Prefer the page's DOM/CDP interface for normal interaction. Use `bin/desktop_input.py` on Linux when
+the page ignores CDP input or a human needs to see a click:
 
 ```bash
-git clone https://github.com/raymondclowe/hermes-virtual-desktop.git ~/hermes-virtual-desktop
-cd ~/hermes-virtual-desktop && ./install.sh --display 2 --web-port 6081 --cdp-port 9334
-./install.sh --verify 2
+python3 ~/.hermes/skills/virtual-desktop/bin/desktop_input.py --display :N --cdp http://127.0.0.1:C open URL
+python3 ~/.hermes/skills/virtual-desktop/bin/desktop_input.py --display :N --cdp http://127.0.0.1:C click --selector '#button'
 ```
 
-Do not replace an existing working display (`:1`, 6080, 9333) — install a second one on its own
-display/ports, each with its own Chrome profile.
+The installed helper lives at `~/.hermes/skills/virtual-desktop/bin/desktop_input.py`; its source
+checkout copy is preferred when available. Do not mix DOM/CDP and X11 input for the same action.
 
-## What you get
+Never enter credentials for the human. For passwords, 2FA, CAPTCHAs, or login prompts, hand over the
+browser door and let the human take over. Never delete, move, or use a temporary/incognito browser
+profile: it preserves the human's session and bookmarks.
 
-- `http://<host>:<web-port>/vnc.html` — the desktop, for the human.
-- `http://127.0.0.1:<cdp-port>` — Chrome DevTools, for the agent.
-- systemd units `hermes-vnc-N`, `hermes-novnc-N`, `hermes-chrome-N`, enabled at boot.
+## Change the human's viewing channel
 
-## Drive it — pick by symptom
+The default human channel is noVNC in a browser tab. Keep it as the safe fallback. If the human
+specifically wants a native-looking window from a remote Linux host, the optional channel is Xpra
+shadow mode: it shows the *same* Linux display and Chrome profile. Follow `references/docs/native-window.md`
+and `references/systemd/xpra-shadow.service.example`; bind Xpra to loopback and access it over SSH.
+Do not install Xpra unless requested, expose its port publicly, or stop the noVNC services to switch.
+To return to noVNC, use the existing browser door and detach/stop only the Xpra client or service
+created for that display. The agent continues using the same CDP endpoint either way.
 
-1. **Page API** (`Runtime.evaluate` + `fetch`) for reads and anything the site's own JS calls.
-2. **DOM over CDP** (`locator.click`, `fill`) — the default for ~95% of work.
-3. **X11 input** (`bin/desktop_input.py click --selector …`) when a page ignores CDP input, is a
-   canvas/WebGL widget, or the click must look human. CDP finds and scrolls; xdotool clicks.
-4. **Human via noVNC** for passwords, 2FA, CAPTCHA.
+Xpra is not a Windows-host alternative. If Hermes and the human are at the same Windows machine,
+Chrome itself is the visible channel. For Windows clients viewing remote Linux, use the documented
+Xpra-over-SSH option only when requested.
 
-Never fix an input problem by installing a second automation stack (bb-browser, Puppeteer, Selenium).
-Fingerprint-level blocks are a browser-profile problem: log in once by hand on this desktop and reuse
-the profile.
+## Troubleshoot
 
-## The profile is the point
+Start with `references/docs/troubleshooting.md`, then `references/docs/ports.md`,
+`references/docs/profile-persistence.md`, or `references/docs/input-ladder.md` as relevant. On Linux,
+`./install.sh --verify N` tests service state, ports, VNC/noVNC, X session, CDP rendering, and profile
+persistence. Read the specific unit's journal before changing it. Never stop or remove a display
+another person or agent may be using.
 
-The browser keeps a **persistent profile** at `~/.config/hermes-desktop/<browser>-<display>/`.
-Chrome is preferred because only the Google build can sign in to Chrome Sync (bookmarks, passwords,
-extensions). Chromium works for everything else but cannot sync. Never delete the profile, never use
-`--incognito` or a temp profile, and sign in once through the browser door — the agent's browser is
-then already logged in.
-
-## Verify before claiming it works
-
-`./install.sh --verify N` must end `RESULT: display :N is live` with no FAIL lines, including
-`CDP NNNN belongs to this install`, `Chrome on :N executes JS` and `profile persists at ...`. Services "active" is not proof: a Chrome with a dead zygote still listens
-on its CDP port while every tab hangs. That failure's fix is the `XDG_RUNTIME_DIR` and
-`DBUS_SESSION_BUS_ADDRESS` entries in the Chrome unit — see `docs/troubleshooting.md`.
-
-## Windows host (Hermes on the same machine as the human)
-
-No VNC, no Xpra. Run `windows/install.ps1`: a dedicated Chrome profile, a CDP port on
-`127.0.0.1:9333`, a visible window, and a Scheduled Task at logon (a service could not show a window).
-Never use the human's default Chrome profile — Chrome locks a profile to one process.
-
-## Rules
-
-- The noVNC port is a passwordless desktop as that user. LAN-only, ufw-restricted; never
-  port-forward it; never `--allow-cidr 0.0.0.0/0`.
-- Never type credentials into it; send the human the URL for that step.
-- One Chrome per install; never share a CDP port between agents.
-- Never stop or uninstall a display another session may be using.
-- Windows client + remote Linux host + wants a native window: `docs/native-window.md` (Xpra). Optional
-  lane — do not install it unless asked.
+Treat the noVNC and Xpra channels as full desktop access, not read-only viewing. Keep access restricted
+to the intended LAN or loopback/SSH; never use `0.0.0.0/0` or port-forward a passwordless desktop.
+Never solve an input issue by adding another browser automation stack.
