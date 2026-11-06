@@ -24,7 +24,7 @@
 #   --no-ufw           do not touch the firewall
 #   --no-chrome        desktop only, no Chrome unit
 #   --cdp-port P       Chrome DevTools port        (default 9333)
-#   --browser NAME     chrome | chromium | auto    (default auto: Chrome first)
+#   --browser NAME     chrome | chromium | auto    (default chrome)
 #   --profile-dir DIR  browser profile directory   (default: persistent, per display)
 #   --generate-password  create a random VNC password, print it once, protect the desktop
 #   --vnc-password-stdin read the VNC password from stdin (keeps it out of ps/logs)
@@ -54,7 +54,7 @@ ALLOW_CIDR="192.168.0.0/24"
 USE_UFW=1
 WITH_CHROME=1
 CDP_PORT=9333
-BROWSER="auto"
+BROWSER="chrome"
 PROFILE_DIR=
 DRY_RUN=0
 MODE="install"
@@ -392,9 +392,8 @@ if [[ "$WITH_CHROME" == "1" ]]; then
   esac
   pick() { for b in "$@"; do command -v "$b" 2>/dev/null && return 0; done; return 1; }
   case "$BROWSER" in
-    chrome)   BROWSER_BIN=$(pick google-chrome google-chrome-stable || true) ;;
+    chrome|auto) BROWSER_BIN=$(pick google-chrome google-chrome-stable || true) ;;
     chromium) BROWSER_BIN=$(pick chromium chromium-browser || true) ;;
-    auto)     BROWSER_BIN=$(pick google-chrome google-chrome-stable chromium chromium-browser || true) ;;
   esac
 
   if [[ -z "$BROWSER_BIN" ]]; then
@@ -597,7 +596,7 @@ Environment=XDG_RUNTIME_DIR=/run/user/${TARGET_UID}
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${TARGET_UID}/bus
 # Chrome 136+ refuses --remote-debugging-port without an explicit --user-data-dir.
 ExecStartPre=/bin/sleep 5
-ExecStart=/opt/google/chrome/google-chrome --user-data-dir=${PROFILE_DIR} --remote-debugging-port=${CDP_PORT} --renderer-process-limit=15 --remote-allow-origins=* --no-first-run --no-default-browser-check --password-store=basic --start-maximized
+ExecStart=${BROWSER_BIN} --user-data-dir=${PROFILE_DIR} --remote-debugging-port=${CDP_PORT} --renderer-process-limit=15 --remote-allow-origins=* --no-first-run --no-default-browser-check --password-store=basic --start-maximized
 Restart=on-failure
 RestartSec=5
 MemoryMax=2G

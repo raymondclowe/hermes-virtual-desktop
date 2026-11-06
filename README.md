@@ -114,8 +114,9 @@ and `profile persists` lines are the three that catch real breakage.
 
 If a site needs a login, do it once through the browser door. The profile at
 `~/.config/hermes-desktop/<browser>-<N>` keeps it, which is the whole reason it lives outside the
-install. Chrome is preferred over Chromium because only Chrome can sign in to Sync —
-[docs/profile-persistence.md](docs/profile-persistence.md).
+install. The installer uses Google's Chrome by default and installs it when missing, even if Chromium
+is present; only Chrome can sign in to Sync. Use `--browser chromium` only when Chrome is unavailable
+or you explicitly want Chromium — [docs/profile-persistence.md](docs/profile-persistence.md).
 
 ## Recipe 2: Linux host, native window for a remote human
 

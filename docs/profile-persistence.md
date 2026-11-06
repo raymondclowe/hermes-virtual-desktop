@@ -13,20 +13,21 @@ session starts as a stranger, and half the work is logging in again.
 | **Chrome Sync** (bookmarks, passwords, history, tabs, extensions) | **yes** | **no** — Chromium ships without Google's API keys, so sign-in is unavailable |
 | Linux arm64 | not published by Google | available (snap/deb) |
 
-So: Chrome where it exists (x86_64), Chromium only where it does not (arm64 hosts) or when the human
-explicitly wants it. Either way the profile persists — that is the part that matters.
+So: Chrome is the default wherever Google publishes it (x86_64). The installer installs Chrome even
+if Chromium is already present, and uses Chromium only where Chrome is unavailable (arm64) or when the
+human explicitly requests it. Either way the profile persists — that is the part that matters.
 
-`install.sh` resolves this automatically:
+`install.sh` defaults to Chrome:
 
 ```bash
-./install.sh --browser auto        # default: google-chrome, then google-chrome-stable, then chromium
-./install.sh --browser chrome      # insist on Chrome (falls back to Chromium on arm64)
+./install.sh                       # install/use Chrome (falls back to Chromium on arm64)
+./install.sh --browser auto        # same Chrome-first behavior
 ./install.sh --browser chromium    # Chromium only
 ./install.sh --profile-dir /srv/profiles/alice-1   # put the profile somewhere else
 ```
 
-If no browser is present, the installer downloads Google's `.deb` and installs it (x86_64), or falls
-back to `chromium-browser`.
+If Chrome is not present, the installer downloads Google's `.deb` and installs it (x86_64). On arm64,
+where Google does not publish Chrome, it installs Chromium instead.
 
 ## Where the profile lives
 
