@@ -366,20 +366,22 @@ hdr "Preconditions"
 command -v websockify >/dev/null || MISSING_PKGS=1
 [[ -d /usr/share/novnc ]] || MISSING_PKGS=1
 command -v xfce4-session >/dev/null || MISSING_PKGS=1
+command -v xfce4-panel >/dev/null || MISSING_PKGS=1
+command -v thunar >/dev/null || MISSING_PKGS=1
 
 if [[ "${MISSING_PKGS:-0}" == "1" ]]; then
-  say "packages missing — installing (tigervnc, novnc, websockify, xfce4)"
+  say "packages missing — installing (tigervnc, novnc, websockify, xfce4, thunar)"
   if [[ "$DRY_RUN" == "1" ]]; then
-    say "[dry-run] would run: sudo apt-get install -y tigervnc-standalone-server tigervnc-common novnc websockify xfce4-session xfce4-terminal dbus-x11 xdotool python3-websockets"
+    say "[dry-run] would run: sudo apt-get install -y tigervnc-standalone-server tigervnc-common novnc websockify xfce4-session xfce4-panel xfce4-terminal thunar dbus-x11 xdotool python3-websockets"
   else
     have_sudo || die "sudo needed to install packages"
     sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
       tigervnc-standalone-server tigervnc-common novnc websockify \
-      xfce4-session xfce4-terminal dbus-x11 xdotool python3-websockets
+      xfce4-session xfce4-panel xfce4-terminal thunar dbus-x11 xdotool python3-websockets
   fi
 else
-  say "tigervnc, noVNC, websockify and XFCE all present"
+  say "tigervnc, noVNC, websockify, XFCE, xfce4-panel and thunar all present"
 fi
 
 hdr "Browser"
