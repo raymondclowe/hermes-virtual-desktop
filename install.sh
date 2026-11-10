@@ -392,7 +392,13 @@ if [[ "$WITH_CHROME" == "1" ]]; then
   esac
   pick() { for b in "$@"; do command -v "$b" 2>/dev/null && return 0; done; return 1; }
   case "$BROWSER" in
-    chrome|auto) BROWSER_BIN=$(pick google-chrome google-chrome-stable || true) ;;
+    chrome|auto)
+      if [[ "$(uname -m)" == "x86_64" ]]; then
+        BROWSER_BIN=$(pick google-chrome google-chrome-stable || true)
+      else
+        BROWSER_BIN=$(pick chromium chromium-browser || true)
+      fi
+      ;;
     chromium) BROWSER_BIN=$(pick chromium chromium-browser || true) ;;
   esac
 
